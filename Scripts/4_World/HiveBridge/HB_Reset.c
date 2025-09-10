@@ -5,23 +5,19 @@ class HB_Reset
 	{
 		CargoBase c = cont.GetInventory().GetCargo();
 		if (!c) return;
-
-		// on supprime du fond vers le début pour éviter les décalages
 		for (int i = c.GetItemCount() - 1; i >= 0; i--)
 		{
 			EntityAI item = c.GetItem(i);
-			if (item) item.Delete();
+			if (item) GetGame().ObjectDelete(item); // ← au lieu de item.Delete()
 		}
 	}
 
 	// remove armes/objets non-vêtements, vider cargos des vêtements/gilet/sac
 	protected static void StripToClothes(PlayerBase p)
 	{
-		// mains
 		EntityAI hands = p.GetHumanInventory().GetEntityInHands();
-		if (hands) { hands.Delete(); }
+		if (hands) GetGame().ObjectDelete(hands);
 
-		// attachments
 		int ac = p.GetInventory().AttachmentCount();
 		for (int i = ac - 1; i >= 0; i--)
 		{
@@ -31,13 +27,11 @@ class HB_Reset
 			Clothing cloth;
 			if (Class.CastTo(cloth, att))
 			{
-				// garder le vêtement mais vider son cargo
-				ClearCargo(att);
+				ClearCargo(att); // garder le vêtement, vider poches
 				continue;
 			}
 
-			// pas un vêtement (ex: arme, ceinture utilitaire, etc.) → supprimer
-			att.Delete();
+			GetGame().ObjectDelete(att); // supprimer non-vêtements proprement
 		}
 	}
 

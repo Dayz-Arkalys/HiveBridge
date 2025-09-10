@@ -58,6 +58,51 @@ class HB_Payload
 
 class HB_Inv
 {
+
+	static void DeleteTree(EntityAI e)
+    {
+        if (!e) return;
+
+        // cargo d'abord
+        CargoBase c = e.GetInventory().GetCargo();
+        if (c)
+        {
+            for (int i = c.GetItemCount() - 1; i >= 0; i--)
+            {
+                EntityAI child = c.GetItem(i);
+                DeleteTree(child);
+            }
+        }
+
+        // attachments ensuite
+        int ac = e.GetInventory().AttachmentCount();
+        for (int ai = ac - 1; ai >= 0; ai--)
+        {
+            EntityAI att = e.GetInventory().GetAttachmentFromIndex(ai);
+            DeleteTree(att);
+        }
+
+        // enfin l'item lui-même
+        GetGame().ObjectDelete(e);
+    }
+
+    // Nettoie l'inventaire du joueur sans RemoveAllItems()
+    static void RemoveAllSafe(PlayerBase p)
+    {
+        if (!p) return;
+
+        // mains
+        EntityAI h = p.GetHumanInventory().GetEntityInHands();
+        if (h) GetGame().ObjectDelete(h);
+
+        // attachments du joueur (vêtements, sac, armes portées, etc.)
+        int ac = p.GetInventory().AttachmentCount();
+        for (int i = ac - 1; i >= 0; i--)
+        {
+            EntityAI att = p.GetInventory().GetAttachmentFromIndex(i);
+            DeleteTree(att);
+        }
+    }
 	// Build one node from an EntityAI (recursive)
 	static HB_Item FromEntity(EntityAI e)
 	{
@@ -221,7 +266,7 @@ class HB_PayloadEx
 
 	static void ApplyTo(PlayerBase p, HB_Payload pl)
 	{
-		p.RemoveAllItems();
+		HB_Inv.RemoveAllSafe(p);
 		p.SetHealth("", "Health", pl.Health);
 		p.SetHealth("", "Blood",  pl.Blood);
 
