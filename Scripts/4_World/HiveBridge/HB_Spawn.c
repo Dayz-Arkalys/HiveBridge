@@ -15,7 +15,7 @@ class HB_Spawn
 	protected static ref array<vector> s_Hop;   // utilisés par SelectSafe()   (SAFE)
 	protected static bool s_Loaded = false;
 
-	protected static string CfgPath() { return "$mission:\\db\\cfgplayerspawnpoints.xml"; }
+	protected static string CfgPath() { return "$mission:\\cfgplayerspawnpoints.xml"; }
 
 	static const float HB_SNAP_OFFSET = 0.35; // un peu plus haut que 0.25
 

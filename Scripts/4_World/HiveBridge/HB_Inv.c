@@ -34,25 +34,30 @@ class HB_Item
 
 class HB_Payload
 {
-	float Health;
-	float Blood;
+    float Health;
+    float Blood;
 
-	// --- États (nouveau)
-	bool  Bleeding = false;   // le joueur saignait au moment de l’export ?
-	int   AgentsMask = 0;     // bitmask des infections (si dispo)
+    // NOUVEAU
+    float Energy;   // nourriture
+    float Water;    // eau
 
-	bool  Reset = false;
-	string Reason;
+    bool Bleeding = false;
+    int  BleedingCount = 0;
+    int  AgentsMask = 0;
 
-	ref array<ref HB_Item> Roots;
+    bool  Reset = false;
+    string Reason;
 
-	void HB_Payload()
-	{
-		Roots = new array<ref HB_Item>();
-	}
+    ref array<ref HB_Item> Roots;
+
+    void HB_Payload()
+    {
+        Roots = new array<ref HB_Item>();
+        // Valeurs sentinelles pour compat JSON anciens
+        Energy = -1;
+        Water  = -1;
+    }
 }
-
-
 
 // ---------- Core: build / spawn tree ----------------------------------------
 
