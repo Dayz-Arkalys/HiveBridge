@@ -30,13 +30,13 @@ modded class MissionServer
 
 		if (!player.m_HB_Applied) {
 			player.m_HB_Applied = true;
-			// ← décale de 50 ms l’application du paquet
-			GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(
-				HB_FileBridge.TryApplyTransfer, 50, false, identity, player
-			);
+
+			// NE PAS passer 2 args à CallLater : on emballe dans un Param2
+			autoptr Param2<PlayerIdentity, PlayerBase> ctx = new Param2<PlayerIdentity, PlayerBase>(identity, player);
+			GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(HB_FileBridge.TryApplyTransferDelayed, 50, false, ctx);
 		} else {
 			HB_LogFile.Info("Transfer already applied for this session.");
-    }
+		}
 	}
 
 	// Toujours exporter à la déconnexion :
@@ -47,7 +47,8 @@ modded class MissionServer
 		super.OnClientDisconnectedEvent(identity, player, logoutTime, authFailed);
 		if (!player || !identity) return;
 
-		HB_LogFile.Info( "OnClientDisconnectedEvent: export packet for " + identity.GetPlainId() + " (alive=" + player.IsAlive().ToString() + ", unconscious=" + player.IsUnconscious().ToString() + ")" );
-		HB_FileBridge.SaveTransfer(player);
+		HB_LogFile.Info( "OnClientDisconnectedEvent: export packet for " + identity.GetPlainId() + " (alive=" + player.IsAlive().ToString() + ", unconscious=" + player.IsUnconscious().ToString() +", restrained=" + player.IsRestrained().ToString() + ")" );
+		HB_FileBridge.SaveTransfer(identity, player);
+
 	}
 }
