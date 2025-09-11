@@ -1,43 +1,59 @@
 class HB_FileBridge
 {
 	protected static string OutPathFor(PlayerIdentity pid)
-	{
-		string root   = HB_LogFile.ProfDir();
-		string outdir = root + "\\outgoing";
-		if (!FileExist(outdir)) MakeDirectory(outdir);
-		return outdir + "\\" + pid.GetPlainId() + ".json";
-	}
+    {
+        string root   = HB_LogFile.ProfDir();
+        string outdir = root + "\\outgoing";
+        if (!FileExist(outdir)) MakeDirectory(outdir);
+        return outdir + "\\" + pid.GetPlainId() + ".json";
+    }
 
-	protected static void WriteReset(PlayerIdentity pid, string reason)
-	{
-		string path = OutPathFor(pid);
+    protected static void WriteReset(PlayerIdentity pid, string reason)
+    {
+        string path = OutPathFor(pid);
 
-		HB_Payload pl = new HB_Payload();
-		pl.Reset  = true;
-		pl.Reason = reason;
+        HB_Payload pl = new HB_Payload();
+        pl.Reset  = true;
+        pl.Reason = reason;
 
-		JsonFileLoader<HB_Payload>.JsonSaveFile(path, pl);
-		HB_LogFile.Info("Export RESET écrit: " + reason + " -> " + path);
-	}
+        JsonFileLoader<HB_Payload>.JsonSaveFile(path, pl);
+        HB_LogFile.Info("Export RESET écrit (" + reason + "): " + path);
+    }
 
-	static void SaveTransfer(PlayerBase p)
-	{
-		PlayerIdentity pid = p.GetIdentity();
-		if (!pid) return;
+    // ← NEW: on prend l'identity en param, et on n'utilise plus p.GetIdentity() comme unique source
+    static void SaveTransfer(PlayerIdentity pid, PlayerBase p)
+    {
+        // sécurité : si l'identity de l'event est null, tenter via le player
+        if (!pid && p) pid = p.GetIdentity();
+        if (!pid) {
+            HB_LogFile.Warn("SaveTransfer: SKIP (no identity)");
+            return;
+        }
 
-		// ——— cas reset
-		if (!p.IsAlive())       { WriteReset(pid, "dead");         return; }
-		if (p.IsUnconscious())  { WriteReset(pid, "unconscious");  return; }
+        // log de contexte
+        HB_LogFile.Info("SaveTransfer: id=" + pid.GetPlainId() + ", hasPlayer=" + (p != null).ToString());
+    
+        // cas RESET (mort / inconscient / ou plus de player pour une raison quelconque)
+        bool doReset = false;
+        string reason = "";
+        if (!p) { doReset = true; reason = "no_player"; }
+        else if (!p.IsAlive()) { doReset = true; reason = "dead"; }
+        else if (p.IsUnconscious()) { doReset = true; reason = "unconscious"; }
+        else if (p.IsRestrained()) { doReset = true; reason = "restrained"; }
 
-		// ——— export normal
-		HB_LogFile.Info("SaveTransfer -> " + pid.GetPlainId());
 
-		string path = OutPathFor(pid);
-		HB_Payload payload = HB_PayloadEx.FromPlayer(p);
-		JsonFileLoader<HB_Payload>.JsonSaveFile(path, payload);
+        if (doReset) {
+            WriteReset(pid, reason);
+            return;
+        }
 
-		HB_LogFile.Info("payload écrit: " + path);
-	}
+        // export normal
+        string path = OutPathFor(pid);
+        HB_Payload payload = HB_PayloadEx.FromPlayer(p);
+        JsonFileLoader<HB_Payload>.JsonSaveFile(path, payload);
+
+        HB_LogFile.Info("Export NORMAL écrit: " + path);
+    }
 
 	static void TryApplyTransfer(PlayerIdentity id, PlayerBase p)
     {
@@ -64,20 +80,30 @@ class HB_FileBridge
             isReset = true;
 
         if (isReset)
-        {
-            HB_LogFile.Info("Import RESET (" + pl.Reason + ") → réinitialisation du stuff");
-            HB_Reset.ToFreshState(p);  // (voir §4)
-        }
-        else
-        {
-            // Import normal (inventaire détaillé)
-            HB_PayloadEx.ApplyTo(p, pl);
-            HB_LogFile.Info("Inventaire appliqué (import normal).");
-        }
+		{
+			HB_LogFile.Info("Import RESET (" + pl.Reason + ") → réinitialisation du stuff");
+			HB_Reset.ToFreshState(p);
 
-        // Spawn safe + ghost
-        vector pos = HB_Spawn.Select();
-        p.SetPosition(pos);
+			// ------ SPAWN "NORMAL" (fresh du XML)
+			vector posN = HB_Spawn.SelectNormal();
+            p.SetPosition(posN);
+            HB_Spawn.EnsureOnGround(p); // <— AJOUT
+            HB_LogFile.Info("Spawn NORMAL (reset): " + posN.ToString());
+
+		}
+		else
+		{
+			// ------ Import inventaire + états
+			HB_PayloadEx.ApplyTo(p, pl);
+
+			// ------ SPAWN "SAFE" (hop du XML)
+			vector posS = HB_Spawn.SelectSafe();
+            p.SetPosition(posS);
+            HB_Spawn.EnsureOnGround(p); // <— AJOUT
+            HB_LogFile.Info("Spawn SAFE (import): " + posS.ToString());
+
+		}
+
         p.SetAllowDamage(false);
         GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(EndGhost, 12000, false, p);
 
@@ -86,6 +112,14 @@ class HB_FileBridge
             HB_LogFile.Warn("Suppression du paquet échouée: " + path);
         else
             HB_LogFile.Info("Paquet consommé et supprimé: " + path);
+    }
+
+    static void TryApplyTransferDelayed(Param2<PlayerIdentity, PlayerBase> ctx)
+    {
+        if (!ctx) return;
+        PlayerIdentity id = ctx.param1;
+        PlayerBase p = ctx.param2;
+        TryApplyTransfer(id, p);
     }
 
 

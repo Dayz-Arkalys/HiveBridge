@@ -1,146 +1,183 @@
 // -----------------------------------------------------------------------------
-// HB_Spawn : charge/écrit $profile\HiveBridge\spawns_<world>.json
-// Auto-crée un fichier par carte avec des points par défaut si absent.
-// (Logs via HB_Log = 3_Game uniquement)
+// HB_Spawn (XML-only)
+//  - RESET  -> points <fresh>  de $mission\db\cfgplayerspawnpoints.xml
+//  - SAFE   -> points <hop>    de $mission\db\cfgplayerspawnpoints.xml
+// Ignore <travel>. Logs via HB_Log (3_Game). Module: 4_World.
 // -----------------------------------------------------------------------------
 
-class HB_SpawnPointCfg
-{
-	float x;
-	float y;
-	float z;
-}
+enum HB_CfgSpawnSection { FRESH = 1, HOP = 2, TRAVEL = 4 }
 
-class HB_SpawnCfg
-{
-	ref array<ref HB_SpawnPointCfg> points;
-	bool snap_to_ground = true;
-
-	void HB_SpawnCfg()
-	{
-		points = new array<ref HB_SpawnPointCfg>();
-	}
-}
 
 class HB_Spawn
 {
-	protected static ref array<vector> s_Points;
-	protected static bool s_SnapToGround = true;
+
+	protected static ref array<vector> s_Fresh; // utilisés par SelectNormal() (RESET)
+	protected static ref array<vector> s_Hop;   // utilisés par SelectSafe()   (SAFE)
 	protected static bool s_Loaded = false;
 
-	protected static string WorldKey()
+	protected static string CfgPath() { return "$mission:\\db\\cfgplayerspawnpoints.xml"; }
+
+	static const float HB_SNAP_OFFSET = 0.35; // un peu plus haut que 0.25
+
+	// Y terrain, avec garde-fou
+	protected static float GroundY(float x, float z)
 	{
-		string w = GetGame().GetWorldName(); // "chernarusplus" | "enoch" | ...
-		w.ToLower();
-		return w;
+		float y = GetGame().SurfaceY(x, z);
+		// si la valeur est aberrante, on fallback à 0
+		if (y < -1000 || y > 10000) y = 0;
+		return y;
 	}
 
-	protected static string Dir()
+	// Snap terrain simple (sans RaycastRV)
+	protected static vector SnapToWorld(vector p, float offset)
 	{
-		return "$profile:\\HiveBridge";
+		float y = GroundY(p[0], p[2]);
+		return Vector(p[0], y + offset, p[2]);
 	}
 
-	protected static string ConfigPath()
+	// Recalage après streaming
+	protected static void _HB_RecheckSnap(PlayerBase p)
 	{
-		return Dir() + "\\spawns_" + WorldKey() + ".json";
-	}
+		if (!p) return;
+		vector pos = p.GetPosition();
+		float gy = GroundY(pos[0], pos[2]);
 
-	protected static vector Ground(vector p)
-	{
-		float y = GetGame().SurfaceY(p[0], p[2]);
-		return Vector(p[0], y, p[2]);
-	}
-
-	// ----------- défauts par carte + écriture du fichier si manquant ----------
-
-	protected static HB_SpawnCfg DefaultCfg(string world_key)
-	{
-		HB_SpawnCfg cfg = new HB_SpawnCfg();
-		if (world_key == "enoch") // Livonia
+		// Si on est sous la surface (ou trop au-dessus), on recale
+		if (pos[1] < gy - 0.05 || pos[1] > gy + 2.0)
 		{
-			cfg.points.Insert(NewPoint(8000, 0, 11000));
-			cfg.points.Insert(NewPoint(6200, 0, 9200));
-			cfg.points.Insert(NewPoint(5300, 0, 7800));
-		}
-		else // chernarusplus par défaut
-		{
-			cfg.points.Insert(NewPoint(13900, 0, 13200));
-			cfg.points.Insert(NewPoint(12500, 0, 11600));
-			cfg.points.Insert(NewPoint(6000,  0, 7800));
-		}
-		cfg.snap_to_ground = true;
-		return cfg;
-	}
-
-	protected static HB_SpawnPointCfg NewPoint(float x, float y, float z)
-	{
-		HB_SpawnPointCfg p = new HB_SpawnPointCfg();
-		p.x = x; p.y = y; p.z = z;
-		return p;
-	}
-
-	protected static void EnsureConfigExists()
-	{
-		if (!FileExist(Dir())) MakeDirectory(Dir());
-
-		string path = ConfigPath();
-		if (!FileExist(path))
-		{
-			HB_SpawnCfg cfg = DefaultCfg(WorldKey());
-			JsonFileLoader<HB_SpawnCfg>.JsonSaveFile(path, cfg);
-			HB_Log.Info("[HB_Spawn] Fichier de spawn créé (défaut): " + path);
+			p.SetPosition(SnapToWorld(pos, HB_SNAP_OFFSET));
 		}
 	}
 
-	// --------------------------- chargement mémoire ----------------------------
-
-	protected static void FallbackDefaultsAndLog(string reason)
+	// Place le joueur sur le sol + rechecks différés
+	static void EnsureOnGround(PlayerBase p)
 	{
-		HB_SpawnCfg cfg = DefaultCfg(WorldKey());
-		s_Points = new array<vector>();
-		foreach (HB_SpawnPointCfg p : cfg.points)
-			s_Points.Insert(Vector(p.x, p.y, p.z));
-		s_SnapToGround = cfg.snap_to_ground;
-		HB_Log.Warn("[HB_Spawn] Fallback défaut (" + reason + ").");
+		if (!p) return;
+
+		vector pos = p.GetPosition();
+		p.SetPosition(SnapToWorld(pos, HB_SNAP_OFFSET));
+
+		// 2 rechecks pour laisser le temps au streaming
+		GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(_HB_RecheckSnap, 250, false, p);
+		GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(_HB_RecheckSnap, 1500, false, p);
 	}
 
-	protected static void LoadOnce()
+	
+
+
+	protected static int FindNextQuote(string s, int start)
+	{
+		int len = s.Length();
+		if (start < 0 || start >= len) return -1;
+		string tail = s.Substring(start, len - start);
+		int rel = tail.IndexOf("\"");   // <-- IndexOf à 1 seul paramètre
+		if (rel < 0) return -1;
+		return start + rel;
+	}
+
+	protected static void LoadFromCfgOnce()
 	{
 		if (s_Loaded) return;
 		s_Loaded = true;
 
-		EnsureConfigExists();
+		s_Fresh = new array<vector>();
+		s_Hop   = new array<vector>();
 
-		string path = ConfigPath();
-		HB_SpawnCfg cfg = new HB_SpawnCfg();
-		JsonFileLoader<HB_SpawnCfg>.JsonLoadFile(path, cfg);
+		string path = CfgPath();
+		if (!FileExist(path)) { HB_Log.Warn("[HB_Spawn] cfgplayerspawnpoints.xml introuvable: " + path); return; }
 
-		if (!cfg || !cfg.points || cfg.points.Count() == 0)
+		FileHandle fh = OpenFile(path, FileMode.READ);
+		if (!fh) { HB_Log.Warn("[HB_Spawn] Impossible d'ouvrir: " + path); return; }
+
+		int cur = 0; // section courante
+		string line;
+		while (FGets(fh, line) > 0)
 		{
-			FallbackDefaultsAndLog("fichier vide/invalide");
-			return;
+			string low = line; low.ToLower();
+
+			// Sections
+			if (low.Contains("<fresh>")) { cur = HB_CfgSpawnSection.FRESH; continue; }
+			if (low.Contains("</fresh>")) { cur = 0; continue; }
+			if (low.Contains("<hop>")) { cur = HB_CfgSpawnSection.HOP; continue; }
+			if (low.Contains("</hop>")) { cur = 0; continue; }
+			if (low.Contains("<travel>")) { cur = HB_CfgSpawnSection.TRAVEL; continue; }
+			if (low.Contains("</travel>")) { cur = 0; continue; }
+
+			// On ne retient QUE FRESH et HOP
+			if (!(cur == HB_CfgSpawnSection.FRESH || cur == HB_CfgSpawnSection.HOP)) continue;
+
+			// Format 1: <pos x="1234.56" z="7890.12" />
+			int xi = low.IndexOf("x=\"");
+			int zi = low.IndexOf("z=\"");
+			if (xi >= 0 && zi >= 0)
+			{
+				xi += 3;                       // après x="
+				int xe = FindNextQuote(low, xi);
+				zi += 3;                       // après z="
+				int ze = FindNextQuote(low, zi);
+
+				if (xe > xi && ze > zi)
+				{
+					string sx = low.Substring(xi, xe - xi);
+					string sz = low.Substring(zi, ze - zi);
+					float fx = sx.ToFloat();
+					float fz = sz.ToFloat();
+					vector v = SnapToWorld(Vector(fx, 0, fz),HB_SNAP_OFFSET);
+					if (cur == HB_CfgSpawnSection.FRESH) s_Fresh.Insert(v); else s_Hop.Insert(v);
+					continue;
+				}
+			}
+
+			// (Optionnel) Format 2: <spawn pos="X Y Z" />
+			int pi = low.IndexOf("pos=\"");
+			if (pi >= 0)
+			{
+				pi += 5;                       // après pos="
+				int pe = FindNextQuote(low, pi);
+				if (pe > pi)
+				{
+					string spos = low.Substring(pi, pe - pi); // "X Y Z"
+					TStringArray toks = new TStringArray();
+					spos.Split(" ", toks);
+					if (toks.Count() >= 3)
+					{
+						float fx2 = toks[0].ToFloat();
+						float fz2 = toks[2].ToFloat();
+						vector v2 = SnapToWorld(Vector(fx2, 0, fz2),HB_SNAP_OFFSET);
+						if (cur == HB_CfgSpawnSection.FRESH) s_Fresh.Insert(v2); else s_Hop.Insert(v2);
+					}
+				}
+			}
 		}
+		CloseFile(fh);
 
-		s_Points = new array<vector>();
-		foreach (HB_SpawnPointCfg p : cfg.points)
-			s_Points.Insert(Vector(p.x, p.y, p.z));
-
-		s_SnapToGround = cfg.snap_to_ground;
-		HB_Log.Info("[HB_Spawn] " + s_Points.Count().ToString() + " points chargés depuis " + path);
+		HB_Log.Info("[HB_Spawn] FRESH: " + s_Fresh.Count().ToString() + " points");
+		HB_Log.Info("[HB_Spawn] HOP  : "   + s_Hop.Count().ToString()   + " points");
 	}
 
-	// ------------------------------- API publique ------------------------------
-
-	static vector Select()
+	protected static vector Pick(array<vector> arr, string tagIfEmpty)
 	{
-		LoadOnce();
-		if (!s_Points || s_Points.Count() == 0)
-			FallbackDefaultsAndLog("aucun point en mémoire");
+		if (!arr || arr.Count() == 0) {
+			HB_Log.Warn("[HB_Spawn] Liste vide: " + tagIfEmpty);
+			return Vector(7500, 0, 7500); // ← vector, pas string
+		}
+		int idx = Math.RandomInt(0, arr.Count());
+		return arr.Get(idx);
+	}
 
-		int idx = Math.RandomInt(0, s_Points.Count());
-		vector pos = s_Points.Get(idx);
+	// RESET -> FRESH (vanilla)
+	static vector SelectNormal()
+	{
+		LoadFromCfgOnce();
+		return Pick(s_Fresh, "FRESH");
+	}
 
-		if (s_SnapToGround) pos = Ground(pos);
-		return pos;
+	// SAFE -> HOP
+	static vector SelectSafe()
+	{
+		LoadFromCfgOnce();
+		// si pas de HOP défini, on retombe sur FRESH
+		if (!s_Hop || s_Hop.Count() == 0) return SelectNormal();
+		return Pick(s_Hop, "HOP");
 	}
 }
