@@ -10,7 +10,6 @@ enum HB_CfgSpawnSection { FRESH = 1, HOP = 2, TRAVEL = 4 }
 
 class HB_Spawn
 {
-	static const float HB_SNAP_OFFSET = 0.25;
 
 	protected static ref array<vector> s_Fresh; // utilisés par SelectNormal() (RESET)
 	protected static ref array<vector> s_Hop;   // utilisés par SelectSafe()   (SAFE)
@@ -18,49 +17,47 @@ class HB_Spawn
 
 	protected static string CfgPath() { return "$mission:\\db\\cfgplayerspawnpoints.xml"; }
 
-	protected static vector Ground(vector p)
+	static const float HB_SNAP_OFFSET = 0.35; // un peu plus haut que 0.25
+
+	// Y terrain, avec garde-fou
+	protected static float GroundY(float x, float z)
 	{
-		float y = GetGame().SurfaceY(p[0], p[2]);
-		return Vector(p[0], y, p[2]);
+		float y = GetGame().SurfaceY(x, z);
+		// si la valeur est aberrante, on fallback à 0
+		if (y < -1000 || y > 10000) y = 0;
+		return y;
 	}
 
+	// Snap terrain simple (sans RaycastRV)
 	protected static vector SnapToWorld(vector p, float offset)
 	{
-		vector from = p + "0 1000 0";
-		vector to   = p + "0 -1000 0";
-		vector hitPos, hitNormal;
-		int hitComp;
-
-		// Raycast: sorted=true, ground_only=true → prend terrain/géo statique
-		if (DayZPhysics.RaycastRV(from, to, hitPos, hitNormal, hitComp, NULL, NULL, true, true))
-			return hitPos + Vector(0, offset, 0);
-
-		// Fallback terrain pur
-		float y = GetGame().SurfaceY(p[0], p[2]);
+		float y = GroundY(p[0], p[2]);
 		return Vector(p[0], y + offset, p[2]);
 	}
 
+	// Recalage après streaming
 	protected static void _HB_RecheckSnap(PlayerBase p)
 	{
 		if (!p) return;
 		vector pos = p.GetPosition();
-		float groundY = GetGame().SurfaceY(pos[0], pos[2]);
-		if (pos[1] < groundY - 0.05 || pos[1] > groundY + 2.0) // sous (ou bcp au-dessus) du sol
+		float gy = GroundY(pos[0], pos[2]);
+
+		// Si on est sous la surface (ou trop au-dessus), on recale
+		if (pos[1] < gy - 0.05 || pos[1] > gy + 2.0)
 		{
-			p.SetPosition(SnapToWorld(pos,HB_SNAP_OFFSET));
+			p.SetPosition(SnapToWorld(pos, HB_SNAP_OFFSET));
 		}
 	}
 
-	// --- util: place un player sur le sol de façon sûre (snap immédiat + rechecks)
+	// Place le joueur sur le sol + rechecks différés
 	static void EnsureOnGround(PlayerBase p)
 	{
 		if (!p) return;
 
 		vector pos = p.GetPosition();
-		vector snapped = SnapToWorld(pos,HB_SNAP_OFFSET);
-		p.SetPosition(snapped);
+		p.SetPosition(SnapToWorld(pos, HB_SNAP_OFFSET));
 
-		// Re-snap après 250 ms (streaming) puis encore après 1500 ms (sécurité)
+		// 2 rechecks pour laisser le temps au streaming
 		GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(_HB_RecheckSnap, 250, false, p);
 		GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(_HB_RecheckSnap, 1500, false, p);
 	}
@@ -158,9 +155,12 @@ class HB_Spawn
 		HB_Log.Info("[HB_Spawn] HOP  : "   + s_Hop.Count().ToString()   + " points");
 	}
 
-	protected static vector Pick( array<vector> arr, string tagIfEmpty)
+	protected static vector Pick(array<vector> arr, string tagIfEmpty)
 	{
-		if (!arr || arr.Count() == 0) { HB_Log.Warn("[HB_Spawn] Liste vide: " + tagIfEmpty); return "7500 0 7500"; }
+		if (!arr || arr.Count() == 0) {
+			HB_Log.Warn("[HB_Spawn] Liste vide: " + tagIfEmpty);
+			return Vector(7500, 0, 7500); // ← vector, pas string
+		}
 		int idx = Math.RandomInt(0, arr.Count());
 		return arr.Get(idx);
 	}
