@@ -1,0 +1,16 @@
+MetaFileClass {
+ Name "{E88D1E72F8D7D63B}HiveBridge/logoHiveBridge.edds"
+ Author "laptop-2pcsc7lb"
+ ChangeDate -263900367
+ Configurations {
+  PNGResourceClass PC {
+   SourceFile "logoHiveBridge.png"
+  }
+  PNGResourceClass XBOX_ONE : PC {
+  }
+  PNGResourceClass PS4 : PC {
+  }
+  PNGResourceClass LINUX : PC {
+  }
+ }
+}
