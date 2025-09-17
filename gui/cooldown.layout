@@ -1,0 +1,22 @@
+<Widget name="root" type="PanelWidget" flags="stretch">
+  <Widget type="ImageWidget" name="Backdrop" flags="stretch">
+    <Property name="color" value="#000000ff" />
+  </Widget>
+
+  <Widget type="TextWidget" name="Timer" flags="center_x center_y">
+    <Property name="text" value="01:30" />
+    <Property name="font" value="gui/fonts/sdf_MetronBook24" />
+    <Property name="size" value="72 72" />
+    <Property name="text_align" value="center" />
+    <Property name="color" value="#ffffffff" />
+  </Widget>
+
+  <Widget type="TextWidget" name="Info" flags="center_x">
+    <Property name="pos" value="0 70" />
+    <Property name="text" value="Transfert en cours... veuillez patienter" />
+    <Property name="font" value="gui/fonts/sdf_MetronBook24" />
+    <Property name="size" value="30 30" />
+    <Property name="text_align" value="center" />
+    <Property name="color" value="#ccccccff" />
+  </Widget>
+</Widget>
