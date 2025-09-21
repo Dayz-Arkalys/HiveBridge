@@ -1,5 +1,15 @@
 // ===================== Inventory serialization (HB_Inv) ======================
 
+// Représente un raccourci
+class HB_QBSlot
+{
+	int    Index;        // 0..9
+	string Type;         // classname de l'item
+	string SlotName;     // (facultatif) nom de slot d’attache (Shoulder, Vest, …)
+	bool   Hands;        // true si l’item était en mains lors de l’export
+	void HB_QBSlot() {}
+}
+
 class HB_Location
 {
 	string kind;      // "HANDS" | "ATTACH" | "CARGO" | "OTHER"
@@ -50,13 +60,15 @@ class HB_Payload
 
     ref array<ref HB_Item> Roots;
 
-    void HB_Payload()
-    {
-        Roots = new array<ref HB_Item>();
-        // Valeurs sentinelles pour compat JSON anciens
-        Energy = -1;
-        Water  = -1;
-    }
+    ref array<ref HB_QBSlot> Quickbar;
+
+	void HB_Payload()
+	{
+		Roots = new array<ref HB_Item>();
+		Energy = -1; 
+		Water  = -1;
+		Quickbar = new array<ref HB_QBSlot>();
+	}
 }
 
 // ---------- Core: build / spawn tree ----------------------------------------
@@ -247,6 +259,8 @@ class HB_PayloadEx
 		pl.Health = p.GetHealth("", "Health");
 		pl.Blood  = p.GetHealth("", "Blood");
 
+		HB_Quickbar.Capture(p, pl);
+
         HB_State.Capture(p, pl);
 
 		// Attachments worn (vest, backpack, clothes, weapon-on-shoulder, etc.)
@@ -280,5 +294,7 @@ class HB_PayloadEx
 			HB_Inv.SpawnInto(p, root);
 		}
         HB_State.Apply(p, pl);
+		HB_Quickbar.Apply(p, pl);
+
 	}
 }
