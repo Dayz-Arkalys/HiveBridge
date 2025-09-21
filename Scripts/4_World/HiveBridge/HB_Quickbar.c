@@ -1,6 +1,15 @@
 // -----------------------------------------------------------------------------
 // HB_Quickbar : capture et applique les raccourcis (quickbar) 0..9
 // -----------------------------------------------------------------------------
+class HB_QBSlot
+{
+	int    Index;        // 0..9
+	string Type;         // classname de l'item
+	string SlotName;     // (optionnel) nom de slot d’attache (Shoulder, Vest, …)
+	bool   Hands;        // true si l’item était en mains lors de l’export
+	void HB_QBSlot() {}
+}
+
 class HB_Quickbar
 {
 	// ----- CAPTURE ------------------------------------------------------------
@@ -11,7 +20,7 @@ class HB_Quickbar
 
 		for (int i = 0; i < 10; i++)
 		{
-			EntityAI e = p.GetQuickBarEntity(i);       // DayZ expose cette API sur PlayerBase
+			EntityAI e = p.GetQuickBarEntity(i);
 			if (!e) continue;
 
 			HB_QBSlot s = new HB_QBSlot();
@@ -19,16 +28,15 @@ class HB_Quickbar
 			s.Type  = e.GetType();
 			s.Hands = (p.GetItemInHands() == e);
 
-			// Optionnel : nom de slot d’attache s’il existe
+			// Nom de slot si dispo
 			InventoryLocation il = new InventoryLocation();
 			if (e.GetInventory() && e.GetInventory().GetCurrentInventoryLocation(il))
 			{
 				int slotId = il.GetSlot();
 				if (slotId != -1)
 				{
-					string sn;
-					InventorySlots.GetSlotName(slotId, sn);
-					s.SlotName = sn;
+					// *** CORRECTION : retourne un string ***
+					s.SlotName = InventorySlots.GetSlotName(slotId);
 				}
 			}
 
@@ -39,7 +47,6 @@ class HB_Quickbar
 	}
 
 	// ----- APPLY --------------------------------------------------------------
-	// On applique après l’import de l’inventaire → petit délai
 	static void Apply(PlayerBase p, HB_Payload pl)
 	{
 		if (!p || !pl || !pl.Quickbar || pl.Quickbar.Count() == 0) return;
@@ -59,40 +66,41 @@ class HB_Quickbar
 			EntityAI e = _FindCandidate(p, s.Type, s.Hands, s.SlotName);
 			if (e)
 			{
-				// forceSwap=true pour écraser un slot occupé
+				// forceSwap=true pour écraser un slot déjà occupé
 				p.SetQuickBarEntityShortcut(e, s.Index, true);
 			}
 		}
 		HB_Log.Info("[HB_QB] applied " + arr.Count().ToString() + " shortcuts");
 	}
 
-	// Trouve un item correspondant dans l’inventaire du joueur
+	// ----------------- helpers de recherche -----------------------------------
 	protected static EntityAI _FindCandidate(PlayerBase p, string type, bool preferHands, string slotName)
 	{
-		// 1) mains en priorité si demandé
+		// 1) mains si demandé
 		EntityAI h = p.GetItemInHands();
 		if (preferHands && h && h.GetType() == type) return h;
 
-		// 2) attache par nom de slot (Shoulder, Melee, Headgear, Vest, etc.)
+		// 2) attache par nom de slot
 		if (slotName && slotName != "")
 		{
 			EntityAI a = p.FindAttachmentBySlotName(slotName);
 			if (a && a.GetType() == type) return a;
 		}
 
-		// 3) fouille cargo direct du joueur
+		// 3) cargo direct du joueur (API indexée)
 		CargoBase c = p.GetInventory().GetCargo();
 		if (c)
 		{
-			for (int y = 0; y < c.GetHeight(); y++)
-			for (int x = 0; x < c.GetWidth();  x++)
+			// *** CORRECTION : GetItemCount / GetItem(index) ***
+			int n = c.GetItemCount();
+			for (int i = 0; i < n; i++)
 			{
-				EntityAI it = c.GetItem(x, y);
+				EntityAI it = c.GetItem(i);
 				if (it && it.GetType() == type) return it;
 			}
 		}
 
-		// 4) en dernier ressort, si l’item est en mains
+		// 4) fallback mains
 		if (h && h.GetType() == type) return h;
 
 		return null;
