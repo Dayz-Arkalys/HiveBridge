@@ -42,8 +42,9 @@ class HB_Payload
 {
     float Health;
     float Blood;
+	
+	string CharType;   // ex: "SurvivorM_Mirek"
 
-    // NOUVEAU
     float Energy;   // nourriture
     float Water;    // eau
 
@@ -62,6 +63,7 @@ class HB_Payload
         // Valeurs sentinelles pour compat JSON anciens
         Energy = -1;
         Water  = -1;
+		CharType = "";  // vide par défaut pour compat JSON anciens
     }
 }
 
@@ -325,6 +327,8 @@ class HB_PayloadEx
 		HB_Payload pl = new HB_Payload();
 		pl.Health = p.GetHealth("", "Health");
 		pl.Blood  = p.GetHealth("", "Blood");
+
+		pl.CharType = p.GetType();
 
 		HB_State.Capture(p, pl);
 

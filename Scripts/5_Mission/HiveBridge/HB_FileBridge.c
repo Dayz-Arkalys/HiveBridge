@@ -20,6 +20,21 @@ class HB_FileBridge
         HB_LogFile.Info("Export RESET écrit (" + reason + "): " + path);
     }
 
+    static string PeekCharacterType(PlayerIdentity pid)
+    {
+        if (!pid) return "";
+        string path = InPathFor(pid);  // tu as déjà InPathFor(...) dans ton fichier
+        if (!FileExist(path)) return "";
+
+        HB_Payload tmp = new HB_Payload();
+        JsonFileLoader<HB_Payload>.JsonLoadFile(path, tmp);
+
+        if (tmp && tmp.CharType && tmp.CharType != "")
+            return tmp.CharType;
+
+        return "";
+    }
+
     // ← NEW: on prend l'identity en param, et on n'utilise plus p.GetIdentity() comme unique source
     static void SaveTransfer(PlayerIdentity pid, PlayerBase p)
     {
