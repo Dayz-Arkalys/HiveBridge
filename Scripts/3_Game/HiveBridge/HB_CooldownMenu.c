@@ -3,14 +3,13 @@ class HB_CooldownMenu : UIScriptedMenu
     protected TextWidget m_Timer;
     protected TextWidget m_Info;
     protected ref Timer  m_Tick;
-    protected int        m_Remaining;
+    protected int m_Remaining;
 
     override Widget Init()
     {
         layoutRoot = GetGame().GetWorkspace().CreateWidgets("HiveBridge/gui/cooldown.layout");
         m_Timer = TextWidget.Cast(layoutRoot.FindAnyWidget("Timer"));
         m_Info  = TextWidget.Cast(layoutRoot.FindAnyWidget("Info"));
-        GetGame().GetInputManager().ActivateContext("UINone"); // optionnel
         return layoutRoot;
     }
 
@@ -27,7 +26,12 @@ class HB_CooldownMenu : UIScriptedMenu
     {
         m_Remaining = Math.Max(0, m_Remaining - 1);
         UpdateLabel();
-        if (m_Remaining == 0) Close();
+        if (m_Remaining == 0)
+        {
+            // On laisse le serveur fermer proprement via RPC_CLOSE.
+            // Au cas où, on peut fallback :
+            // GetGame().GetUIManager().HideScriptedMenu(this);
+        }
     }
 
     void UpdateLabel()
@@ -37,12 +41,10 @@ class HB_CooldownMenu : UIScriptedMenu
         if (m_Timer) m_Timer.SetText(mm.ToStringLen(2) + ":" + ss.ToStringLen(2));
     }
 
-    override bool CanClose() { return false; }
-
-    override void OnHide()
+    // Empêche la fermeture via Échap
+    override bool OnKeyDown(Widget w, int x, int y, int key)
     {
-        if (m_Tick) m_Tick.Stop();
-        GetGame().GetInputManager().DeactivateContext("UINone");
-        super.OnHide();
+        if (key == KeyCode.KC_ESCAPE) return true; // consomme ESC
+        return super.OnKeyDown(w, x, y, key);
     }
 }

@@ -103,7 +103,7 @@ class HB_FileBridge
             // Ouvrir l’UI cooldown côté client
             ScriptRPC rpcOpen = new ScriptRPC();
             rpcOpen.Write(cooldown);
-            rpcOpen.Send(null, HB_RPC_COOLDOWN_OPEN, true, id);
+            rpcOpen.Send(p, HB_RPC_COOLDOWN_OPEN, true, id);
 
             // Contexte pour appliquer après le délai
             ref HB_ApplyCtx ctx = new HB_ApplyCtx();
@@ -126,7 +126,7 @@ class HB_FileBridge
 
         // Fermer l’UI côté client
         ScriptRPC rpcClose = new ScriptRPC();
-        rpcClose.Send(null, HB_RPC_COOLDOWN_CLOSE, true, ctx.Identity);
+        rpcClose.Send(ctx.Player, HB_RPC_COOLDOWN_CLOSE, true, ctx.Identity);
 
         __ApplyNow(ctx.Identity, ctx.Player, ctx.Payload, ctx.PacketPath);
     }
