@@ -17,6 +17,15 @@ modded class MissionServer
 		if (player && identity) {
 			HB_LogFile.Info("OnClientNewEvent: " + identity.GetName() + " (" + identity.GetPlainId() + ")");
 		}
+		if (!player.m_HB_Applied) {
+			player.m_HB_Applied = true;
+
+			// NE PAS passer 2 args à CallLater : on emballe dans un Param2
+			autoptr Param2<PlayerIdentity, PlayerBase> ctx2 = new Param2<PlayerIdentity, PlayerBase>(identity, player);
+			GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(HB_FileBridge.TryApplyTransferDelayed, 50, false, ctx2);
+		} else {
+			HB_LogFile.Info("Transfer already applied for this session.");
+		}
 		return player;
 	}
 
