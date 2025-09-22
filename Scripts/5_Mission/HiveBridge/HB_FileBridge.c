@@ -1,5 +1,13 @@
 class HB_FileBridge
 {
+    protected static string InPathFor(PlayerIdentity pid)
+    {
+        string root   = HB_LogFile.ProfDir();   // ex: $profile/HiveBridge
+        string indir  = root + "\\incoming";
+        if (!FileExist(indir)) MakeDirectory(indir);
+        return indir + "\\" + pid.GetPlainId() + ".json";
+    }
+
 	protected static string OutPathFor(PlayerIdentity pid)
     {
         string root   = HB_LogFile.ProfDir();
@@ -18,6 +26,21 @@ class HB_FileBridge
 
         JsonFileLoader<HB_Payload>.JsonSaveFile(path, pl);
         HB_LogFile.Info("Export RESET écrit (" + reason + "): " + path);
+    }
+
+    static string PeekCharacterType(PlayerIdentity pid)
+    {
+        if (!pid) return "";
+        string path = InPathFor(pid);  // tu as déjà InPathFor(...) dans ton fichier
+        if (!FileExist(path)) return "";
+
+        HB_Payload tmp = new HB_Payload();
+        JsonFileLoader<HB_Payload>.JsonLoadFile(path, tmp);
+
+        if (tmp && tmp.CharType && tmp.CharType != "")
+            return tmp.CharType;
+
+        return "";
     }
 
     // ← NEW: on prend l'identity en param, et on n'utilise plus p.GetIdentity() comme unique source

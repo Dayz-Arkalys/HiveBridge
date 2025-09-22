@@ -14,30 +14,37 @@ class HB_Location
 
 class HB_Item
 {
-	string type;
-	float  health = 100.0;
+    string type;
+    float  health = 100.0;
 
-	int qty  = -1;    // ItemBase quantity (pile, food, fluid, etc.)
-	int ammo = -1;    // Magazine ammo count
+    int qty  = -1;
+    int ammo = -1;
 
-	ref HB_Location loc;
-	ref array<ref HB_Item> attachments;
-	ref array<ref HB_Item> cargo;
+    ref HB_Location loc;
+    ref array<ref HB_Item> attachments;
+    ref array<ref HB_Item> cargo;
 
-	void HB_Item()
-	{
-		loc = new HB_Location();
-		attachments = new array<ref HB_Item>();
-		cargo = new array<ref HB_Item>();
-	}
+    // --- QUICKBAR intégrés à l’item ---
+    int  QB = -1;          // 0..9 si assigné, sinon -1
+    bool QBHands = false;  // true si l’item était en mains
+
+    void HB_Item()
+    {
+        loc = new HB_Location();
+        attachments = new array<ref HB_Item>();
+        cargo = new array<ref HB_Item>();
+        QB = -1;
+        QBHands = false;
+    }
 }
 
 class HB_Payload
 {
     float Health;
     float Blood;
+	
+	string CharType;   // ex: "SurvivorM_Mirek"
 
-    // NOUVEAU
     float Energy;   // nourriture
     float Water;    // eau
 
@@ -56,6 +63,7 @@ class HB_Payload
         // Valeurs sentinelles pour compat JSON anciens
         Energy = -1;
         Water  = -1;
+		CharType = "";  // vide par défaut pour compat JSON anciens
     }
 }
 
@@ -177,8 +185,77 @@ class HB_Inv
 		return node;
 	}
 
-	// Spawn one node into parent (recursive)
-	static EntityAI SpawnInto(EntityAI parent, HB_Item src)
+	// Construit un noeud ET l’indexe (EntityAI -> HB_Item), récursif
+	static HB_Item FromEntityIndexed(EntityAI e, map<EntityAI, ref HB_Item> idx)
+	{
+		HB_Item node = new HB_Item();
+
+		node.type   = e.GetType();
+		node.health = e.GetHealth("", "Health");
+
+		ItemBase ib; Magazine mag;
+		if (Class.CastTo(ib, e) && ib.HasQuantity())
+			node.qty = ib.GetQuantity();
+		if (Class.CastTo(mag, e))
+			node.ammo = mag.GetAmmoCount();
+
+		InventoryLocation il = new InventoryLocation();
+		if (e.GetInventory() && e.GetInventory().GetCurrentInventoryLocation(il))
+		{
+			int t = il.GetType();
+			if (t == InventoryLocationType.ATTACHMENT)
+			{
+				node.loc.kind      = "ATTACH";
+				node.loc.slot_id   = il.GetSlot();
+				node.loc.slot_name = InventorySlots.GetSlotName(node.loc.slot_id);
+			}
+			else if (t == InventoryLocationType.CARGO)
+			{
+				node.loc.kind = "CARGO";
+				node.loc.idx  = il.GetIdx();
+				node.loc.row  = il.GetRow();
+				node.loc.col  = il.GetCol();
+				node.loc.flip = il.GetFlip();
+			}
+			else if (t == InventoryLocationType.HANDS)
+			{
+				node.loc.kind = "HANDS";
+			}
+			else
+			{
+				node.loc.kind = "OTHER";
+			}
+		}
+
+		// indexe CET EntityAI vers ce HB_Item
+		idx.Insert(e, node);
+
+		// ATTACHMENTS
+		int ac = e.GetInventory().AttachmentCount();
+		for (int ai = 0; ai < ac; ai++)
+		{
+			EntityAI att = e.GetInventory().GetAttachmentFromIndex(ai);
+			if (att) node.attachments.Insert(FromEntityIndexed(att, idx));
+		}
+
+		// CARGO
+		CargoBase c = e.GetInventory().GetCargo();
+		if (c)
+		{
+			int n = c.GetItemCount();
+			for (int ci = 0; ci < n; ci++)
+			{
+				EntityAI child = c.GetItem(ci);
+				if (child) node.cargo.Insert(FromEntityIndexed(child, idx));
+			}
+		}
+
+		return node;
+	}
+
+
+	// REMPLACE la signature + corps de SpawnInto
+	static EntityAI SpawnInto(PlayerBase owner, EntityAI parent, HB_Item src)
 	{
 		EntityAI spawned = null;
 
@@ -193,7 +270,6 @@ class HB_Inv
 		}
 		else if (src.loc.kind == "ATTACH")
 		{
-			// Simple & robuste : laisse le jeu placer au slot compatible
 			spawned = parent.GetInventory().CreateAttachment(src.type);
 			if (!spawned) spawned = parent.GetInventory().CreateInInventory(src.type);
 		}
@@ -209,32 +285,37 @@ class HB_Inv
 
 		if (!spawned) return null;
 
-		// Properties
-        ItemBase ib; Magazine mag;
-        if (Class.CastTo(ib, spawned))
-        {
-            if (src.qty >= 0) ib.SetQuantity(src.qty);
-            spawned.SetHealth("", "Health", src.health);
-        }
-        if (Class.CastTo(mag, spawned) && src.ammo >= 0)
-        {
-            // DayZ: pas de SetAmmoCount(); on utilise ServerSetAmmoCount()
-            mag.ServerSetAmmoCount(src.ammo);   // valeur exacte
-        }
+		// Propriétés
+		ItemBase ib; Magazine mag;
+		if (Class.CastTo(ib, spawned))
+		{
+			if (src.qty >= 0) ib.SetQuantity(src.qty);
+			spawned.SetHealth("", "Health", src.health);
+		}
+		if (Class.CastTo(mag, spawned) && src.ammo >= 0)
+		{
+			mag.ServerSetAmmoCount(src.ammo);
+		}
 
+		// --- QUICKBAR : force l’assignation si demandé
+		if (src.QB >= 0 && owner)
+		{
+			owner.SetQuickBarEntityShortcut(spawned, src.QB, true); // forceSwap = true
+		}
 
 		// Recurse
 		foreach (HB_Item a : src.attachments)
 		{
-			HB_Inv.SpawnInto(spawned, a);
+			HB_Inv.SpawnInto(owner, spawned, a);
 		}
 		foreach (HB_Item cg : src.cargo)
 		{
-			HB_Inv.SpawnInto(spawned, cg);
+			HB_Inv.SpawnInto(owner, spawned, cg);
 		}
 
 		return spawned;
 	}
+
 }
 
 // ---------- High-level payload helpers ---------------------------------------
@@ -247,27 +328,47 @@ class HB_PayloadEx
 		pl.Health = p.GetHealth("", "Health");
 		pl.Blood  = p.GetHealth("", "Blood");
 
-        HB_State.Capture(p, pl);
+		pl.CharType = p.GetType();
 
-		// Attachments worn (vest, backpack, clothes, weapon-on-shoulder, etc.)
+		HB_State.Capture(p, pl);
+
+		// --- NOUVEAU : index pour mapper EntityAI -> HB_Item
+		map<EntityAI, ref HB_Item> idx = new map<EntityAI, ref HB_Item>();
+
+		// Attachments portés
 		int ac = p.GetInventory().AttachmentCount();
 		for (int i = 0; i < ac; i++)
 		{
 			EntityAI att = p.GetInventory().GetAttachmentFromIndex(i);
-			if (att) pl.Roots.Insert(HB_Inv.FromEntity(att));
+			if (att) pl.Roots.Insert(HB_Inv.FromEntityIndexed(att, idx));
 		}
 
 		// Hands
 		EntityAI hands = p.GetHumanInventory().GetEntityInHands();
 		if (hands)
 		{
-			HB_Item ih = HB_Inv.FromEntity(hands);
+			HB_Item ih = HB_Inv.FromEntityIndexed(hands, idx);
 			ih.loc.kind = "HANDS";
 			pl.Roots.Insert(ih);
 		}
 
+		// --- Marquage QUICKBAR dans l’arbre
+		for (int q = 0; q < 10; q++)
+		{
+			EntityAI qe = p.GetQuickBarEntity(q);
+			if (!qe) continue;
+
+			HB_Item node;
+			if (idx.Find(qe, node) && node)
+			{
+				node.QB      = q;
+				node.QBHands = (hands == qe);
+			}
+		}
+
 		return pl;
 	}
+
 
 	static void ApplyTo(PlayerBase p, HB_Payload pl)
 	{
@@ -277,8 +378,9 @@ class HB_PayloadEx
 
 		foreach (HB_Item root : pl.Roots)
 		{
-			HB_Inv.SpawnInto(p, root);
+			HB_Inv.SpawnInto(p, p, root);  // <-- owner=p, parent=p
 		}
-        HB_State.Apply(p, pl);
+		HB_State.Apply(p, pl);
 	}
+
 }

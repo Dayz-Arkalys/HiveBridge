@@ -60,4 +60,23 @@ modded class MissionServer
 		HB_FileBridge.SaveTransfer(identity, player);
 
 	}
+
+	override PlayerBase CreateCharacter(PlayerIdentity identity, vector pos, ParamsReadContext ctx, string characterName)
+	{
+		// Essaye de lire à l'avance le modèle dans le paquet incoming
+		string desired = HB_FileBridge.PeekCharacterType(identity);
+
+		// Fallback sur le paramètre vanilla si pas de paquet ou pas de champ
+		if (desired == "" || desired == string.Empty)
+			desired = characterName;
+
+		// Crée le joueur directement avec le bon type (modèle)
+		EntityAI e = EntityAI.Cast( GetGame().CreatePlayer(identity, desired, pos, 0, "NONE") );
+		PlayerBase player = PlayerBase.Cast(e);
+
+		// Vanilla: sélection du joueur courant
+		GetGame().SelectPlayer(identity, player);
+
+		return player;
+	}
 }
