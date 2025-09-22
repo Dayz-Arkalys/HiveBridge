@@ -1,5 +1,13 @@
 class HB_FileBridge
 {
+    protected static string InPathFor(PlayerIdentity pid)
+    {
+        string root   = HB_LogFile.ProfDir();   // ex: $profile/HiveBridge
+        string indir  = root + "\\incoming";
+        if (!FileExist(indir)) MakeDirectory(indir);
+        return indir + "\\" + pid.GetPlainId() + ".json";
+    }
+
 	protected static string OutPathFor(PlayerIdentity pid)
     {
         string root   = HB_LogFile.ProfDir();
